@@ -1,0 +1,76 @@
+name: Build TextForge
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Write client_secrets.json from GitHub Secret
+        env:
+          CLIENT_SECRETS_JSON: ${{ secrets.CLIENT_SECRETS_JSON }}
+        run: |
+          $env:CLIENT_SECRETS_JSON | Out-File -FilePath client_secrets.json -Encoding utf8
+
+      - name: Generate icon assets
+        run: python scripts/generate_icon.py
+
+      - name: Build TextForge.exe with PyInstaller
+        run: |
+          pyinstaller `
+            --onefile `
+            --noconsole `
+            --icon=assets/icon.ico `
+            --name TextForge `
+            --add-data "client_secrets.json;." `
+            src/textforge/__main__.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TextForge-exe
+          path: dist/TextForge.exe
+
+      - name: Read version
+        id: version
+        run: |
+          $version = python -c "from src.textforge import __version__; print(__version__)"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: TextForge v${{ steps.version.outputs.version }}
+          body: |
+            ## TextForge v${{ steps.version.outputs.version }}
+
+            Download `TextForge.exe` and run it. No Python installation required.
+
+            ### First-time setup
+            1. Run `TextForge.exe` — it appears in the system tray
+            2. Click the tray icon → **Sign In** → complete the Google OAuth flow
+            3. Your snippets sync automatically across devices
+          files: dist/TextForge.exe
+          generate_release_notes: true

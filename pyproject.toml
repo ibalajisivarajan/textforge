@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "textforge"
+version = "1.0.0"
+description = "A free, self-built, Google-synced system-wide text expander for Windows"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Balaji Sivarajan" }]
+requires-python = ">=3.11"
+dependencies = [
+    "keyboard==0.13.5",
+    "pystray==0.19.5",
+    "customtkinter==5.2.2",
+    "google-auth==2.29.0",
+    "google-auth-oauthlib==1.2.0",
+    "google-api-python-client==2.127.0",
+    "Pillow==10.3.0",
+    "pyperclip==1.8.2",
+]
+
+[project.scripts]
+textforge = "textforge.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
