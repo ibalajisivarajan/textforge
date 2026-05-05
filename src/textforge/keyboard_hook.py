@@ -19,8 +19,9 @@ class KeyboardHook:
       hook.start()
       ...
       hook.reload_shortcuts()   # call after snippet add/edit/delete
-      ...
-      hook.stop()
+      hook.pause()              # unregisters hook — no events processed
+      hook.resume()             # re-registers hook
+      hook.stop()               # permanent stop
     """
 
     def __init__(self):
@@ -28,14 +29,13 @@ class KeyboardHook:
         self._shortcuts: dict[str, str] = {}
         self._paused: bool = False
         self._lock = threading.Lock()
-        self._hook_ref = None
         self.reload_shortcuts()
 
     def start(self) -> None:
         """Register the global keyboard hook."""
         try:
             import keyboard
-            self._hook_ref = keyboard.on_press(self._on_key_event, suppress=False)
+            keyboard.on_press(self._on_key_event, suppress=False)
             log.info("Keyboard hook started.")
         except Exception as e:
             log.error("Failed to start keyboard hook: %s", e)
@@ -49,17 +49,25 @@ class KeyboardHook:
         except Exception as e:
             log.warning("Error stopping keyboard hook: %s", e)
 
+    def pause(self) -> None:
+        """Stop listening. Clears the buffer."""
+        self._paused = True
+        with self._lock:
+            self._buffer.clear()
+        self.stop()
+        log.info("Expansion paused.")
+
+    def resume(self) -> None:
+        """Re-register the hook and resume expansion."""
+        self._paused = False
+        self.start()
+        log.info("Expansion resumed.")
+
     def reload_shortcuts(self) -> None:
         """Re-read shortcuts from storage (call after any snippet mutation)."""
         with self._lock:
             self._shortcuts = get_all_shortcuts()
         log.debug("Shortcuts reloaded: %d entries.", len(self._shortcuts))
-
-    def pause(self) -> None:
-        self._paused = True
-
-    def resume(self) -> None:
-        self._paused = False
 
     @property
     def is_paused(self) -> bool:
@@ -77,12 +85,11 @@ class KeyboardHook:
                     self._buffer.pop()
             return
 
-        if name == "esc" or name == "escape":
+        if name in ("esc", "escape"):
             with self._lock:
                 self._buffer.clear()
             return
 
-        # Map keyboard library key names to their character
         char = _key_name_to_char(name)
         if char is None:
             return
@@ -96,11 +103,10 @@ class KeyboardHook:
             match = match_shortcut(buffer_str, shortcuts_snapshot)
             if match:
                 shortcut, expansion = match
-                word_end_char = char
-                actions = build_replacement_keystrokes(shortcut, expansion, word_end_char)
-                # Defer expansion to avoid deadlock on the hook thread
+                actions = build_replacement_keystrokes(shortcut, expansion, char)
+                # Defer to next tick — firing keyboard events from inside a
+                # keyboard hook callback causes a deadlock on Windows.
                 threading.Timer(0, lambda: self._fire_expansion(actions)).start()
-                # Clear buffer after scheduling expansion
                 with self._lock:
                     self._buffer.clear()
 
@@ -120,12 +126,8 @@ def _key_name_to_char(name: str) -> str | None:
     """Convert keyboard library key name to printable character, or None."""
     if name is None:
         return None
-
-    # Single printable character
     if len(name) == 1:
         return name
-
-    # Named keys mapped to their characters
     _named = {
         "space": " ",
         "tab": "\t",

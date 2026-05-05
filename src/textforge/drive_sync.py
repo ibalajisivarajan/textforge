@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from .config import DRIVE_FILE_NAME, DRIVE_FOLDER
-from .storage import load_snippets, save_snippets, _load_raw, _save_raw
+from .storage import _load_raw, _save_raw
 
 log = logging.getLogger(__name__)
 
@@ -47,20 +47,17 @@ def download_snippets(service, file_id: str) -> dict:
 
 def upload_snippets(service, file_id: str | None, data: dict) -> str:
     """
-    If file_id is None: create new file in appDataFolder.
-    If file_id exists: update file content.
-    Return file_id.
+    Create or update snippets.json in Drive appDataFolder.
+    Returns the file ID.
     """
     content = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
     media = MediaIoBaseUpload(io.BytesIO(content), mimetype="application/json")
 
     if file_id is None:
-        file_metadata = {
-            "name": DRIVE_FILE_NAME,
-            "parents": [DRIVE_FOLDER],
-        }
         result = service.files().create(
-            body=file_metadata, media_body=media, fields="id"
+            body={"name": DRIVE_FILE_NAME, "parents": [DRIVE_FOLDER]},
+            media_body=media,
+            fields="id",
         ).execute()
         return result["id"]
     else:
@@ -71,17 +68,17 @@ def upload_snippets(service, file_id: str | None, data: dict) -> str:
 def sync_from_drive(credentials) -> bool:
     """
     Pull snippets from Drive → overwrite local cache.
-    Return True on success, False on error.
+    Returns True on success, False on any error.
     """
     try:
         service = get_drive_service(credentials)
         file_id = find_snippets_file(service)
         if file_id is None:
-            log.info("No snippets file found on Drive; nothing to pull.")
+            log.info("No snippets file on Drive — nothing to pull.")
             return True
         remote_data = download_snippets(service, file_id)
         _save_raw(remote_data)
-        log.info("Synced snippets from Drive (%d snippets).", len(remote_data.get("snippets", [])))
+        log.info("Pulled %d snippets from Drive.", len(remote_data.get("snippets", [])))
         return True
     except Exception as e:
         log.warning("sync_from_drive failed: %s", e)
@@ -91,17 +88,17 @@ def sync_from_drive(credentials) -> bool:
 def sync_to_drive(credentials) -> bool:
     """
     Push local cache → Drive.
-    Return True on success, False on error.
+    Returns True on success, False on any error.
     """
     try:
-        service = get_drive_service(credentials)
-        file_id = find_snippets_file(service)
         local_data = _load_raw()
         if not local_data:
-            log.info("Local snippets empty; skipping Drive upload.")
+            log.info("Local snippets empty — skipping Drive upload.")
             return True
+        service = get_drive_service(credentials)
+        file_id = find_snippets_file(service)
         upload_snippets(service, file_id, local_data)
-        log.info("Synced local snippets to Drive.")
+        log.info("Pushed %d snippets to Drive.", len(local_data.get("snippets", [])))
         return True
     except Exception as e:
         log.warning("sync_to_drive failed: %s", e)
