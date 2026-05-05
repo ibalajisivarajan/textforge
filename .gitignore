@@ -1,0 +1,47 @@
+# Google OAuth secrets — never commit
+client_secrets.json
+
+# User token — contains refresh token, never commit
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# PyInstaller output
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local runtime data (generated at runtime, not source)
+%APPDATA%/TextForge/
