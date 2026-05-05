@@ -9,6 +9,15 @@ except ImportError:
     from textforge.config import APPDATA_DIR, LOCK_FILE, APP_NAME
 
 
+def _setup_oauth_env():
+    """
+    Tell requests_oauthlib not to raise when Google returns extra scopes
+    (e.g. 'openid') alongside the ones we requested. Without this, the
+    token exchange raises 'Warning: Scope has changed' and sign-in fails.
+    """
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
+
 def _setup_ssl():
     """
     Point requests and httplib2 at the bundled certifi CA store.
@@ -73,7 +82,8 @@ def _release_lock():
 
 
 def main():
-    _setup_ssl()       # must be first — before any HTTPS calls
+    _setup_oauth_env() # must be before any OAuth call
+    _setup_ssl()       # must be before any HTTPS call
     _setup_logging()
     log = logging.getLogger(__name__)
 
