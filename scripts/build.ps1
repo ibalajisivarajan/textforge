@@ -40,6 +40,7 @@ pyinstaller `
     --hidden-import=keyboard._winkeyboard `
     --collect-all=customtkinter `
     --collect-all=googleapiclient `
+    --collect-all=certifi `
     src\textforge\__main__.py
 
 if ($LASTEXITCODE -ne 0) {

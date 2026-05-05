@@ -1,5 +1,6 @@
 import json
 import logging
+import urllib.request
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -71,13 +72,32 @@ def _save_credentials(creds: Credentials) -> None:
 
 
 def get_user_email(credentials: Credentials) -> str:
-    """Call userinfo API. Return email string."""
+    """
+    Return the signed-in user's email address.
+    Tries googleapiclient first; falls back to a direct urllib call so
+    it works in PyInstaller bundles where discovery docs may be missing.
+    """
+    # Primary: googleapiclient discovery
     try:
         service = build("oauth2", "v2", credentials=credentials)
         info = service.userinfo().get().execute()
-        return info.get("email", "")
+        email = info.get("email", "")
+        if email:
+            return email
     except Exception as e:
-        log.warning("Failed to fetch user email: %s", e)
+        log.debug("googleapiclient userinfo failed, trying urllib fallback: %s", e)
+
+    # Fallback: direct HTTPS call — no discovery docs needed
+    try:
+        req = urllib.request.Request(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {credentials.token}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("email", "")
+    except Exception as e:
+        log.warning("get_user_email fallback also failed: %s", e)
         return ""
 
 
@@ -89,7 +109,6 @@ def sign_out() -> None:
     try:
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
         if creds.token:
-            import urllib.request
             urllib.request.urlopen(
                 f"https://oauth2.googleapis.com/revoke?token={creds.token}",
                 timeout=5,

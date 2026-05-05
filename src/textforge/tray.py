@@ -56,12 +56,18 @@ def build_tray_icon(app):
         Called fresh every time the menu is opened, so Sign In/Out state,
         account label, and pause state are always current.
         """
+        creds = getattr(app, "credentials", None)
         email = getattr(app, "user_email", None)
-        signed_in = email is not None
+        signed_in = creds is not None
         hook = getattr(app, "keyboard_hook", None)
         paused = hook.is_paused if hook else False
 
-        account_label = f"● {email}" if signed_in else "● Not signed in"
+        if email:
+            account_label = f"● {email}"
+        elif signed_in:
+            account_label = "● Signed in"
+        else:
+            account_label = "● Not signed in"
         pause_label = "Resume Expansion" if paused else "Pause Expansion"
 
         items = [
