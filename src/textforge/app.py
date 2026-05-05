@@ -113,6 +113,8 @@ class TextForgeApp:
             self.user_email = get_user_email(self.credentials)
             log.info("Signed in as %s.", self.user_email)
             self._notify(f"Signed in as {self.user_email}")
+            if self._tray_icon:
+                self._tray_icon.update_menu()
             threading.Thread(
                 target=lambda: sync_from_drive(self.credentials), daemon=True
             ).start()
@@ -127,6 +129,8 @@ class TextForgeApp:
         self.user_email = None
         log.info("Signed out.")
         self._notify("Signed out of TextForge.")
+        if self._tray_icon:
+            self._tray_icon.update_menu()
 
     def sync_now(self):
         """Manual sync triggered from tray. Notifies on completion."""

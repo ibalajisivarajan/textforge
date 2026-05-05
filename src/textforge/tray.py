@@ -47,6 +47,7 @@ def build_tray_icon(app):
 
     def _on_toggle_pause(icon, item):
         app.toggle_pause()
+        icon.update_menu()
 
     def _on_quit(icon, item):
         app.quit()
