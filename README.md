@@ -2,7 +2,7 @@
 
 A free, self-built, Google-synced system-wide text expander for Windows.
 
-Type `bs` anywhere on Windows → it expands to `Balaji Sivarajan`. Like iOS Text Replacement, but for Windows. Snippets sync across devices via your Google Drive.
+Type `bs` anywhere on Windows → it expands to `Balaji Sivarajan`. Type a shortcut, get the full expansion — synced across all your Windows machines via Google Drive.
 
 ## How it works
 

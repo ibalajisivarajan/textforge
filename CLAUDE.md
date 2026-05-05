@@ -10,7 +10,7 @@ All decisions are locked. Read this fully before writing a single line of code.
 **Balaji Sivarajan** — Senior TPM, vibe coder, no formal coding background.
 
 - Primary dev device: Microsoft Surface Pro (Windows 11)
-- Primary usage device: iPhone (uses claude.ai to direct builds)
+- Primary usage device: Mobile (uses claude.ai to direct builds)
 - GitHub: ibalajisivarajan
 - Build philosophy: MVP first, full replacement files always, no partial diffs
 
@@ -20,8 +20,8 @@ All decisions are locked. Read this fully before writing a single line of code.
 
 A free, self-built, Google-synced system-wide text expander for Windows.
 
-The iPhone has iCloud Text Replacement — you type `omw` and it expands to `On my way!`
-anywhere on the device. TextForge is that, for Windows, with Google Drive as the sync backend.
+A free, self-built, Google-synced text expander for Windows. Type `omw` and it expands to `On my way!`
+anywhere on Windows. TextForge does this system-wide, with Google Drive as the sync backend.
 
 **Core loop:**
 
@@ -97,7 +97,7 @@ Hidden from Drive UI. App-scoped. Only TextForge can read/write it.
 
 ### Trigger Matching Rules
 
-- **No prefix character** — type the shortcut directly (like iOS Text Replacement)
+- **No prefix character** — type the shortcut directly, like any standard text expander
 - **Word-boundary fire:** expansion triggers when a word-ending character follows the shortcut
   - Word-ending chars: `space tab . , ; : ! ? \n \r`
 - **Case-insensitive, same-order:** `bs` / `BS` / `Bs` / `bS` all match `bs`. `sb` does NOT match.
@@ -133,7 +133,7 @@ Hidden from Drive UI. App-scoped. Only TextForge can read/write it.
 |003|Python + PyInstaller .exe                   |Clean OAuth libs, single binary, no Python needed on target|
 |004|drive.appdata scope only                    |Minimal privacy surface; app cannot see other Drive files  |
 |005|L1 static expansion only for MVP            |Validate daily use before layering complexity              |
-|006|No-prefix trigger + word-boundary detection |Matches iOS Text Replacement UX reference                  |
+|006|No-prefix trigger + word-boundary detection |Low friction; type shortcut directly like any standard text expander|
 |007|Case-insensitive, same-order matching       |User preference; bs/BS/Bs/bS all match                     |
 |008|Local cache for expansion hot path          |Zero network latency; offline support                      |
 |009|PyInstaller –onefile distribution           |Single .exe, no Python required on target machine          |
@@ -732,7 +732,7 @@ After Step 11: push to main, verify GitHub Actions builds successfully, download
 1. Usage statistics
 1. Fill-in forms
 1. Folders / tags
-1. iPhone web UI (Cloudflare Pages reading same Drive file)
+1. Web management UI (Cloudflare Pages reading same Drive file)
 1. Token encryption (Windows DPAPI)
 1. Per-app disable rules
 
