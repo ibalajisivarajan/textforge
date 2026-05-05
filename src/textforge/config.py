@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "TextForge"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 APPDATA_DIR = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "TextForge"
 SNIPPETS_FILE = APPDATA_DIR / "snippets.json"

@@ -36,6 +36,10 @@ pyinstaller `
     --icon=assets\icon.ico `
     --name TextForge `
     "--add-data=client_secrets.json;." `
+    --hidden-import=pystray._win32 `
+    --hidden-import=keyboard._winkeyboard `
+    --collect-all=customtkinter `
+    --collect-all=googleapiclient `
     src\textforge\__main__.py
 
 if ($LASTEXITCODE -ne 0) {

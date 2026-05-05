@@ -12,10 +12,9 @@ ctk.set_default_color_theme("blue")
 
 class MainWindow(ctk.CTk):
     """
-    The TextForge snippet manager window.
-    Size: 600x450, resizable.
-    Provides Add / Edit / Delete + live search + sync status.
-    On close: hides itself (agent stays in tray).
+    The TextForge snippet manager window. This IS the CTk root window.
+    Created hidden at startup; shown/hidden on demand via show() / withdraw().
+    Never destroyed until quit() — closing the window only hides it.
     """
 
     def __init__(self, app_ref):
@@ -32,11 +31,10 @@ class MainWindow(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._build_ui()
-        self._refresh_list()
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
         # Search bar
         self._search_var = ctk.StringVar()
@@ -48,7 +46,7 @@ class MainWindow(ctk.CTk):
         )
         search_entry.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="ew")
 
-        # Header row
+        # Column headers
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=1, column=0, padx=12, pady=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
@@ -63,24 +61,23 @@ class MainWindow(ctk.CTk):
         self._scroll_frame.grid(row=2, column=0, padx=12, pady=4, sticky="nsew")
         self._scroll_frame.grid_columnconfigure(0, weight=1)
         self._scroll_frame.grid_columnconfigure(1, weight=3)
-        self.grid_rowconfigure(2, weight=1)
 
         # Bottom action bar
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.grid(row=3, column=0, padx=12, pady=(4, 12), sticky="ew")
-        bottom.grid_columnconfigure(1, weight=1)
+        bottom.grid_columnconfigure(2, weight=1)
 
         self._btn_add = ctk.CTkButton(bottom, text="+ Add", width=80, command=self._on_add)
         self._btn_add.grid(row=0, column=0, padx=(0, 6))
 
         self._btn_edit = ctk.CTkButton(bottom, text="✏ Edit", width=80,
                                        command=self._on_edit, state="disabled")
-        self._btn_edit.grid(row=0, column=1, padx=6, sticky="w")
+        self._btn_edit.grid(row=0, column=1, padx=6)
 
         self._btn_delete = ctk.CTkButton(bottom, text="🗑 Delete", width=80,
                                          fg_color="#c0392b", hover_color="#96281b",
                                          command=self._on_delete, state="disabled")
-        self._btn_delete.grid(row=0, column=2, padx=6)
+        self._btn_delete.grid(row=0, column=2, padx=6, sticky="w")
 
         self._sync_label = ctk.CTkLabel(bottom, text="", text_color="gray",
                                         font=ctk.CTkFont(size=11))
@@ -124,7 +121,6 @@ class MainWindow(ctk.CTk):
                                    anchor="w", wraplength=380)
             lbl_exp.grid(row=0, column=1, sticky="w", padx=8, pady=4)
 
-            # Bind click to select, double-click to edit
             for widget in (row, lbl_sc, lbl_exp):
                 widget.bind("<Button-1>", lambda e, i=idx: self._on_row_click(i))
                 widget.bind("<Double-Button-1>", lambda e, i=idx: self._on_row_double_click(i))
@@ -223,14 +219,16 @@ class MainWindow(ctk.CTk):
         self.after(0, lambda: self._sync_label.configure(text=label))
 
     def set_sync_status(self, text: str):
-        """Called from app thread to update sync label."""
-        self.after(0, lambda: self._sync_label.configure(text=text))
-
-    def _on_close(self):
-        self.withdraw()
+        """Thread-safe — call via after(0, ...) from non-tk threads."""
+        self._sync_label.configure(text=text)
 
     def show(self):
+        """Show and focus the window. Safe to call from main tk thread."""
+        self._refresh_list()
         self.deiconify()
         self.lift()
         self.focus_force()
-        self._refresh_list()
+
+    def _on_close(self):
+        """Hide instead of destroy so the agent stays alive in the tray."""
+        self.withdraw()

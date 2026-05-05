@@ -10,7 +10,12 @@ log = logging.getLogger(__name__)
 class TextForgeApp:
     """
     Main application class. Wires all components together.
-    Call start() to launch. Blocks until quit() is called.
+
+    Threading model:
+      - Main thread: customtkinter mainloop (via MainWindow, which is the CTk root)
+      - Background thread: pystray (run_detached)
+      - Background threads: Drive sync, keyboard expansion, sign-in flow
+      - All cross-thread UI calls must use self._main_window.after(0, fn)
     """
 
     def __init__(self):
@@ -22,45 +27,46 @@ class TextForgeApp:
         self._sync_timer: Optional[threading.Timer] = None
 
     def start(self):
-        """Full startup sequence. Blocks on tray.run()."""
-        # 1. Ensure APPDATA_DIR exists
+        """Full startup sequence. Blocks on tkinter mainloop."""
         APPDATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        # 2. Load local snippets (storage does this lazily; just ensure dir exists)
         from .storage import load_snippets
         snippets = load_snippets()
         log.info("Loaded %d local snippets.", len(snippets))
 
-        # 3. Try to restore credentials from token.json
         from .auth import get_credentials, get_user_email
         self.credentials = get_credentials()
         if self.credentials:
             self.user_email = get_user_email(self.credentials)
             log.info("Signed in as %s.", self.user_email)
-            # 4. Sync from Drive on startup in background
             threading.Thread(target=self._startup_sync, daemon=True).start()
 
-        # 5. Start keyboard hook
         from .keyboard_hook import KeyboardHook
         self.keyboard_hook = KeyboardHook()
         self.keyboard_hook.start()
 
-        # 6. Start periodic sync timer
         self._schedule_sync()
 
-        # 7. Build and run tray (blocking)
+        # Create the main window hidden — it IS the CTk root window.
+        # mainloop() runs on it; all other UI calls go through after().
+        from .ui.main_window import MainWindow
+        self._main_window = MainWindow(self)
+        self._main_window.withdraw()
+
+        # pystray must run in a background thread so the main thread stays
+        # free for the tkinter event loop.
         from .tray import build_tray_icon
         self._tray_icon = build_tray_icon(self)
+        self._tray_icon.run_detached()
+
         log.info("TextForge started. Running in system tray.")
-        self._tray_icon.run()
+        self._main_window.mainloop()  # blocks until quit() destroys the root
 
     def _startup_sync(self):
         from .drive_sync import sync_from_drive
         ok = sync_from_drive(self.credentials)
-        if ok:
-            log.info("Startup sync from Drive complete.")
-            if self.keyboard_hook:
-                self.keyboard_hook.reload_shortcuts()
+        if ok and self.keyboard_hook:
+            self.keyboard_hook.reload_shortcuts()
 
     def _schedule_sync(self):
         self._sync_timer = threading.Timer(SYNC_INTERVAL_SECONDS, self._periodic_sync)
@@ -75,27 +81,21 @@ class TextForgeApp:
             if self.keyboard_hook:
                 self.keyboard_hook.reload_shortcuts()
             if self._main_window:
-                try:
-                    from datetime import datetime
-                    ts = datetime.now().strftime("%I:%M %p").lstrip("0")
-                    self._main_window.set_sync_status(f"Synced ✓ {ts}")
-                except Exception:
-                    pass
+                from datetime import datetime
+                ts = datetime.now().strftime("%I:%M %p").lstrip("0")
+                self._main_window.after(
+                    0, lambda: self._main_window.set_sync_status(f"Synced ✓ {ts}")
+                )
         self._schedule_sync()
 
-    # --- Actions callable from tray menu ---
+    # --- Actions callable from tray menu (called on pystray thread) ---
 
     def open_main_window(self):
-        """Open or focus the snippet manager window."""
-        if self._main_window is None:
-            from .ui.main_window import MainWindow
-            self._main_window = MainWindow(self)
-        else:
-            self._main_window.show()
-        self._main_window.mainloop()
+        """Schedule show on the tkinter thread."""
+        if self._main_window:
+            self._main_window.after(0, self._main_window.show)
 
     def sign_in(self):
-        """Run OAuth flow and update state."""
         from .auth import run_oauth_flow, get_user_email
         from .drive_sync import sync_from_drive
         try:
@@ -111,7 +111,6 @@ class TextForgeApp:
             log.error("Sign in failed: %s", e)
 
     def sign_out(self):
-        """Sign out and clear state."""
         from .auth import sign_out as auth_sign_out
         auth_sign_out()
         self.credentials = None
@@ -121,9 +120,7 @@ class TextForgeApp:
             self._tray_icon.update_menu()
 
     def sync_now(self):
-        """Manual sync from tray menu."""
         if not self.credentials:
-            log.info("Sync skipped — not signed in.")
             return
         from .drive_sync import sync_to_drive, sync_from_drive
         sync_to_drive(self.credentials)
@@ -133,25 +130,23 @@ class TextForgeApp:
         if self._main_window:
             from datetime import datetime
             ts = datetime.now().strftime("%I:%M %p").lstrip("0")
-            self._main_window.set_sync_status(f"Synced ✓ {ts}")
+            self._main_window.after(
+                0, lambda: self._main_window.set_sync_status(f"Synced ✓ {ts}")
+            )
 
     def toggle_pause(self):
-        """Pause or resume the keyboard hook."""
         if self.keyboard_hook:
             if self.keyboard_hook.is_paused:
                 self.keyboard_hook.resume()
-                log.info("Expansion resumed.")
             else:
                 self.keyboard_hook.pause()
-                log.info("Expansion paused.")
 
     def quit(self):
-        """Clean shutdown."""
         if self._sync_timer:
             self._sync_timer.cancel()
         if self.keyboard_hook:
             self.keyboard_hook.stop()
         if self._tray_icon:
             self._tray_icon.stop()
-        import sys
-        sys.exit(0)
+        if self._main_window:
+            self._main_window.after(0, self._main_window.destroy)

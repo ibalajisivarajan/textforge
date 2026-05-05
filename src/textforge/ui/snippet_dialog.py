@@ -55,7 +55,7 @@ class SnippetDialog(ctk.CTkToplevel):
         self._expansion_text = ctk.CTkTextbox(self, height=80, width=340)
         self._expansion_text.grid(row=3, column=0, padx=20, pady=(0, 4), sticky="ew")
 
-        self._error_label = ctk.CTkLabel(self, text="", text_color="red",
+        self._error_label = ctk.CTkLabel(self, text="", text_color="#e74c3c",
                                          font=ctk.CTkFont(size=11))
         self._error_label.grid(row=4, column=0, padx=20, sticky="w")
 
@@ -74,7 +74,6 @@ class SnippetDialog(ctk.CTkToplevel):
         shortcut = self._shortcut_var.get().strip().lower()
         expansion = self._expansion_text.get("1.0", "end").rstrip("\n")
 
-        # Validation
         if not shortcut:
             self._show_error("Shortcut is required.")
             return
@@ -93,13 +92,12 @@ class SnippetDialog(ctk.CTkToplevel):
 
         from textforge.storage import add_snippet, update_snippet, load_snippets
 
-        # Duplicate check (warn only — allow if editing same snippet)
+        # Duplicate check — block if another snippet already owns this shortcut
         existing = {s["shortcut"]: s["id"] for s in load_snippets()}
-        if shortcut in existing:
-            own_id = self._snippet["id"] if self._snippet else None
-            if existing[shortcut] != own_id:
-                self._show_error(f'Warning: "{shortcut}" already exists. Saving anyway.')
-                # Proceed — this is a warning, not a hard block
+        own_id = self._snippet["id"] if self._snippet else None
+        if shortcut in existing and existing[shortcut] != own_id:
+            self._show_error(f'Shortcut "{shortcut}" is already used. Choose another.')
+            return
 
         if self._mode == "add":
             add_snippet(shortcut, expansion)
