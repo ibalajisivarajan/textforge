@@ -2,7 +2,11 @@ import logging
 import sys
 import os
 
-from .config import APPDATA_DIR, LOCK_FILE, APP_NAME
+# Support both `python -m textforge` (relative imports) and PyInstaller bundled exe (absolute)
+try:
+    from .config import APPDATA_DIR, LOCK_FILE, APP_NAME
+except ImportError:
+    from textforge.config import APPDATA_DIR, LOCK_FILE, APP_NAME
 
 
 def _setup_logging():
@@ -24,12 +28,10 @@ def _acquire_lock() -> bool:
     if LOCK_FILE.exists():
         try:
             pid = int(LOCK_FILE.read_text().strip())
-            # Check if the process is still alive (Windows: check via os.kill signal 0)
             os.kill(pid, 0)
             return False  # Process is alive — another instance is running
         except (ValueError, OSError):
-            # Stale lock file — previous instance crashed
-            pass
+            pass  # Stale lock file — previous instance crashed
     LOCK_FILE.write_text(str(os.getpid()))
     return True
 
@@ -46,17 +48,23 @@ def main():
     log = logging.getLogger(__name__)
 
     if not _acquire_lock():
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(
-            0,
-            f"{APP_NAME} is already running.\nCheck the system tray.",
-            APP_NAME,
-            0x40,  # MB_ICONINFORMATION
-        )
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"{APP_NAME} is already running.\nCheck the system tray.",
+                APP_NAME,
+                0x40,  # MB_ICONINFORMATION
+            )
+        except Exception:
+            pass
         sys.exit(0)
 
     try:
-        from .app import TextForgeApp
+        try:
+            from .app import TextForgeApp
+        except ImportError:
+            from textforge.app import TextForgeApp
         app = TextForgeApp()
         app.start()
     except Exception as e:
