@@ -9,6 +9,21 @@ except ImportError:
     from textforge.config import APPDATA_DIR, LOCK_FILE, APP_NAME
 
 
+def _setup_ssl():
+    """
+    Point requests and httplib2 at the bundled certifi CA store.
+    Must be called before any HTTPS request — critical in PyInstaller bundles
+    where the default certificate path doesn't exist on disk.
+    """
+    try:
+        import certifi
+        ca_bundle = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+    except Exception:
+        pass
+
+
 def _setup_logging():
     APPDATA_DIR.mkdir(parents=True, exist_ok=True)
     log_file = APPDATA_DIR / "textforge.log"
@@ -58,6 +73,7 @@ def _release_lock():
 
 
 def main():
+    _setup_ssl()       # must be first — before any HTTPS calls
     _setup_logging()
     log = logging.getLogger(__name__)
 

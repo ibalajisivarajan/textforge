@@ -41,6 +41,7 @@ pyinstaller `
     --collect-all=customtkinter `
     --collect-all=googleapiclient `
     --collect-all=certifi `
+    --collect-all=httplib2 `
     src\textforge\__main__.py
 
 if ($LASTEXITCODE -ne 0) {

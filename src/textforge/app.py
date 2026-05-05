@@ -118,6 +118,7 @@ class TextForgeApp:
             ).start()
         except Exception as e:
             log.error("Sign in failed: %s", e)
+            self._notify(f"Sign in failed: {type(e).__name__}: {e}")
 
     def sign_out(self):
         from .auth import sign_out as auth_sign_out
