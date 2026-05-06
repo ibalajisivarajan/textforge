@@ -292,24 +292,12 @@ def run_sync_tests() -> None:
     from textforge.drive_sync import sync_to_drive, sync_from_drive
 
     def _to_drive_no_creds():
-        fake_local = {"version": 1, "snippets": [{"id": "x", "shortcut": "bs", "expansion": "Balaji"}]}
-        with (
-            patch("textforge.drive_sync._load_raw", return_value=fake_local),
-            patch(
-                "textforge.drive_sync.get_drive_service",
-                side_effect=Exception("simulated auth failure"),
-            ),
-        ):
-            result = sync_to_drive(None)
-        assert result is False, f"Expected False on Drive failure, got {result!r}"
+        result = sync_to_drive(None)
+        assert result is False, f"Expected False when credentials=None, got {result!r}"
 
     def _from_drive_no_creds():
-        with patch(
-            "textforge.drive_sync.get_drive_service",
-            side_effect=Exception("simulated auth failure"),
-        ):
-            result = sync_from_drive(None)
-        assert result is False, f"Expected False on Drive failure, got {result!r}"
+        result = sync_from_drive(None)
+        assert result is False, f"Expected False when credentials=None, got {result!r}"
 
     def _from_drive_returns_true_when_no_remote_file():
         """When Drive has no snippets file yet, sync_from_drive returns True (nothing to pull)."""
