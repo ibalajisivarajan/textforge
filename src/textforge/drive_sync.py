@@ -70,6 +70,9 @@ def sync_from_drive(credentials) -> bool:
     Pull snippets from Drive → overwrite local cache.
     Returns True on success, False on any error.
     """
+    if credentials is None:
+        log.debug("sync_from_drive: no credentials, skipping.")
+        return False
     try:
         service = get_drive_service(credentials)
         file_id = find_snippets_file(service)
@@ -90,6 +93,9 @@ def sync_to_drive(credentials) -> bool:
     Push local cache → Drive.
     Returns True on success, False on any error.
     """
+    if credentials is None:
+        log.debug("sync_to_drive: no credentials, skipping.")
+        return False
     try:
         local_data = _load_raw()
         if not local_data:
