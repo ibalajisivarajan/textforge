@@ -747,3 +747,49 @@ After Step 11: push to main, verify GitHub Actions builds successfully, download
 - **Single process.** Everything runs in one Python process. No subprocesses except PyInstaller build.
 - **Graceful degradation.** Drive sync failures must never crash the agent. Log and continue.
 - **client_secrets.json is never committed to git.** It is in .gitignore. It enters the build only via GitHub Secret.
+
+-----
+
+## Release Gate — Mandatory Before Every Version Bump
+
+Before bumping the version number or pushing to main, these
+three steps are non-negotiable. In order:
+
+### 1. Run automated tests
+
+```
+python -m pytest tests/ -v
+```
+
+All tests must pass. If any fail — fix them first.
+Do not push with failing tests under any circumstances.
+
+### 2. Self-review against TESTPLAN.md
+
+Read every test case. For any section where you changed
+code in this session, reason through each case explicitly:
+- Does my change affect this case?
+- Does it still pass?
+- Is there any edge case I haven't covered?
+
+Write a one-line note next to any case you consider "at risk"
+before pushing.
+
+### 3. Check these four things manually in code
+
+Before every push, scan for these specific patterns:
+
+a) Any bare `except:` clause — every except must log the error,
+   never swallow it silently
+
+b) Any place `update_menu()` should fire but doesn't
+   (after sign in, sign out, pause, resume)
+
+c) Any `keyboard.send()` called directly inside an `on_press`
+   callback — must always be deferred via `threading.Timer(0, ...)`
+
+d) Any place `credentials` or `hook` are used without a `None` check
+
+Only after all three steps pass — bump the version and push.
+Never push a version bump to fix a single bug without
+completing all three steps first.
