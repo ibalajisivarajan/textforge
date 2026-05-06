@@ -24,12 +24,10 @@ def _acquire_lock() -> bool:
     if LOCK_FILE.exists():
         try:
             pid = int(LOCK_FILE.read_text().strip())
-            # Check if the process is still alive (Windows: check via os.kill signal 0)
             os.kill(pid, 0)
-            return False  # Process is alive — another instance is running
-        except (ValueError, OSError):
-            # Stale lock file — previous instance crashed
-            pass
+            return False  # process alive — another instance running
+        except (ValueError, OSError) as e:
+            logging.getLogger(__name__).debug("Removing stale lock file (pid check failed: %s).", e)
     LOCK_FILE.write_text(str(os.getpid()))
     return True
 

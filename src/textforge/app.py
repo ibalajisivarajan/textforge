@@ -1,8 +1,9 @@
 import logging
 import threading
+from datetime import datetime
 from typing import Optional
 
-from .config import APPDATA_DIR, SYNC_INTERVAL_SECONDS
+from .config import APPDATA_DIR, SYNC_INTERVAL_SECONDS, APP_NAME
 
 log = logging.getLogger(__name__)
 
@@ -10,7 +11,12 @@ log = logging.getLogger(__name__)
 class TextForgeApp:
     """
     Main application class. Wires all components together.
-    Call start() to launch. Blocks until quit() is called.
+
+    Threading model:
+      - Main thread: pystray.run() (blocking)
+      - Background threads: Drive sync, keyboard expansion, sign-in flow,
+        and the MainWindow mainloop (opened on demand)
+      - All cross-thread UI calls must go through self._main_window.after(0, fn)
     """
 
     def __init__(self):
@@ -23,44 +29,36 @@ class TextForgeApp:
 
     def start(self):
         """Full startup sequence. Blocks on tray.run()."""
-        # 1. Ensure APPDATA_DIR exists
         APPDATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        # 2. Load local snippets (storage does this lazily; just ensure dir exists)
         from .storage import load_snippets
-        snippets = load_snippets()
-        log.info("Loaded %d local snippets.", len(snippets))
+        log.info("Loaded %d local snippets.", len(load_snippets()))
 
-        # 3. Try to restore credentials from token.json
         from .auth import get_credentials, get_user_email
         self.credentials = get_credentials()
         if self.credentials:
             self.user_email = get_user_email(self.credentials)
             log.info("Signed in as %s.", self.user_email)
-            # 4. Sync from Drive on startup in background
             threading.Thread(target=self._startup_sync, daemon=True).start()
 
-        # 5. Start keyboard hook
         from .keyboard_hook import KeyboardHook
         self.keyboard_hook = KeyboardHook()
         self.keyboard_hook.start()
 
-        # 6. Start periodic sync timer
         self._schedule_sync()
 
-        # 7. Build and run tray (blocking)
         from .tray import build_tray_icon
         self._tray_icon = build_tray_icon(self)
         log.info("TextForge started. Running in system tray.")
         self._tray_icon.run()
 
+    # --- Sync helpers ---
+
     def _startup_sync(self):
         from .drive_sync import sync_from_drive
         ok = sync_from_drive(self.credentials)
-        if ok:
-            log.info("Startup sync from Drive complete.")
-            if self.keyboard_hook:
-                self.keyboard_hook.reload_shortcuts()
+        if ok and self.keyboard_hook:
+            self.keyboard_hook.reload_shortcuts()
 
     def _schedule_sync(self):
         self._sync_timer = threading.Timer(SYNC_INTERVAL_SECONDS, self._periodic_sync)
@@ -74,16 +72,26 @@ class TextForgeApp:
             sync_from_drive(self.credentials)
             if self.keyboard_hook:
                 self.keyboard_hook.reload_shortcuts()
-            if self._main_window:
-                try:
-                    from datetime import datetime
-                    ts = datetime.now().strftime("%I:%M %p").lstrip("0")
-                    self._main_window.set_sync_status(f"Synced ✓ {ts}")
-                except Exception:
-                    pass
+            self._update_sync_label()
         self._schedule_sync()
 
-    # --- Actions callable from tray menu ---
+    def _update_sync_label(self):
+        if self._main_window:
+            try:
+                ts = datetime.now().strftime("%I:%M %p").lstrip("0")
+                self._main_window.set_sync_status(f"Synced ✓ {ts}")
+            except Exception as e:
+                log.debug("Failed to update sync label: %s", e)
+
+    def _notify(self, message: str):
+        """Show a tray balloon notification (non-fatal if unsupported)."""
+        try:
+            if self._tray_icon:
+                self._tray_icon.notify(message, APP_NAME)
+        except Exception as e:
+            log.debug("Tray notify failed (non-fatal): %s", e)
+
+    # --- Actions callable from tray menu (called on pystray thread) ---
 
     def open_main_window(self):
         """Open or focus the snippet manager window."""
@@ -95,13 +103,13 @@ class TextForgeApp:
         self._main_window.mainloop()
 
     def sign_in(self):
-        """Run OAuth flow and update state."""
         from .auth import run_oauth_flow, get_user_email
         from .drive_sync import sync_from_drive
         try:
             self.credentials = run_oauth_flow()
             self.user_email = get_user_email(self.credentials)
             log.info("Signed in as %s.", self.user_email)
+            self._notify(f"Signed in as {self.user_email}")
             if self._tray_icon:
                 self._tray_icon.update_menu()
             threading.Thread(
@@ -109,49 +117,49 @@ class TextForgeApp:
             ).start()
         except Exception as e:
             log.error("Sign in failed: %s", e)
+            self._notify(f"Sign in failed: {type(e).__name__}: {e}")
 
     def sign_out(self):
-        """Sign out and clear state."""
         from .auth import sign_out as auth_sign_out
         auth_sign_out()
         self.credentials = None
         self.user_email = None
         log.info("Signed out.")
+        self._notify("Signed out of TextForge.")
         if self._tray_icon:
             self._tray_icon.update_menu()
 
     def sync_now(self):
-        """Manual sync from tray menu."""
+        """Manual sync triggered from tray. Notifies on completion."""
         if not self.credentials:
-            log.info("Sync skipped — not signed in.")
+            self._notify("Sign in first to sync snippets.")
             return
         from .drive_sync import sync_to_drive, sync_from_drive
-        sync_to_drive(self.credentials)
-        sync_from_drive(self.credentials)
+        push_ok = sync_to_drive(self.credentials)
+        pull_ok = sync_from_drive(self.credentials)
         if self.keyboard_hook:
             self.keyboard_hook.reload_shortcuts()
-        if self._main_window:
-            from datetime import datetime
-            ts = datetime.now().strftime("%I:%M %p").lstrip("0")
-            self._main_window.set_sync_status(f"Synced ✓ {ts}")
+        self._update_sync_label()
+        if push_ok and pull_ok:
+            self._notify("Snippets synced successfully.")
+        else:
+            self._notify("Sync completed with errors — check your connection.")
 
     def toggle_pause(self):
-        """Pause or resume the keyboard hook."""
         if self.keyboard_hook:
             if self.keyboard_hook.is_paused:
                 self.keyboard_hook.resume()
-                log.info("Expansion resumed.")
+                self._notify("Text expansion resumed.")
             else:
                 self.keyboard_hook.pause()
-                log.info("Expansion paused.")
+                self._notify("Text expansion paused.")
 
     def quit(self):
-        """Clean shutdown."""
         if self._sync_timer:
             self._sync_timer.cancel()
         if self.keyboard_hook:
             self.keyboard_hook.stop()
         if self._tray_icon:
             self._tray_icon.stop()
-        import sys
-        sys.exit(0)
+        if self._main_window:
+            self._main_window.after(0, self._main_window.destroy)
