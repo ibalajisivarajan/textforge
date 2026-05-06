@@ -29,8 +29,8 @@ def _setup_ssl():
         ca_bundle = certifi.where()
         os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
         os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger(__name__).debug("certifi not available, using system certs: %s", e)
 
 
 def _setup_logging():
@@ -56,7 +56,8 @@ def _is_process_alive(pid: int) -> bool:
             ctypes.windll.kernel32.CloseHandle(handle)
             return True
         return False
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).debug("Process alive check failed: %s", e)
         return False
 
 
@@ -68,8 +69,8 @@ def _acquire_lock() -> bool:
             pid = int(LOCK_FILE.read_text().strip())
             if _is_process_alive(pid):
                 return False  # Another instance is running
-        except (ValueError, OSError):
-            pass  # Stale lock file — previous instance crashed
+        except (ValueError, OSError) as e:
+            logging.getLogger(__name__).debug("Removing stale lock file (pid check failed: %s).", e)
     LOCK_FILE.write_text(str(os.getpid()))
     return True
 
@@ -82,8 +83,8 @@ def _release_lock():
 
 
 def main():
-    _setup_oauth_env() # must be before any OAuth call
-    _setup_ssl()       # must be before any HTTPS call
+    _setup_oauth_env()  # must be before any OAuth call
+    _setup_ssl()        # must be before any HTTPS call
     _setup_logging()
     log = logging.getLogger(__name__)
 

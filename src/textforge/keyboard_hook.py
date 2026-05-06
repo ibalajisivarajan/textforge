@@ -50,7 +50,7 @@ class KeyboardHook:
             log.warning("Error stopping keyboard hook: %s", e)
 
     def pause(self) -> None:
-        """Stop listening. Clears the buffer."""
+        """Stop listening and clear the buffer."""
         self._paused = True
         with self._lock:
             self._buffer.clear()

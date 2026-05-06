@@ -15,8 +15,8 @@ def _get_icon_image():
     if icon_path.exists():
         try:
             return Image.open(str(icon_path))
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed to load icon file: %s", e)
 
     img = Image.new("RGBA", (64, 64), color="#1a1a2e")
     draw = ImageDraw.Draw(img)
@@ -54,12 +54,12 @@ def build_tray_icon(app):
 
     def _menu_items():
         """
-        Called fresh every time the menu is opened, so Sign In/Out state,
+        Called fresh every time the menu is opened so sign-in state,
         account label, and pause state are always current.
         """
         creds = getattr(app, "credentials", None)
         email = getattr(app, "user_email", None)
-        signed_in = creds is not None
+        signed_in = creds is not None  # guard on credentials, not email
         hook = getattr(app, "keyboard_hook", None)
         paused = hook.is_paused if hook else False
 

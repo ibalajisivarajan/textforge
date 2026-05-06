@@ -129,5 +129,6 @@ def is_signed_in() -> bool:
     try:
         data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
         return bool(data.get("refresh_token"))
-    except Exception:
+    except Exception as e:
+        log.debug("Failed to read token file for sign-in check: %s", e)
         return False

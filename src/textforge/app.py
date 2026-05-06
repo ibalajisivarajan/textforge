@@ -85,10 +85,13 @@ class TextForgeApp:
 
     def _update_sync_label(self):
         if self._main_window:
-            ts = datetime.now().strftime("%I:%M %p").lstrip("0")
-            self._main_window.after(
-                0, lambda: self._main_window.set_sync_status(f"Synced ✓ {ts}")
-            )
+            try:
+                ts = datetime.now().strftime("%I:%M %p").lstrip("0")
+                self._main_window.after(
+                    0, lambda: self._main_window.set_sync_status(f"Synced ✓ {ts}")
+                )
+            except Exception as e:
+                log.debug("Failed to update sync label: %s", e)
 
     def _notify(self, message: str):
         """Show a tray balloon notification (non-fatal if unsupported)."""
