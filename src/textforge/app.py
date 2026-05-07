@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -43,7 +44,9 @@ class TextForgeApp:
 
         from .keyboard_hook import KeyboardHook
         self.keyboard_hook = KeyboardHook()
-        self.keyboard_hook.start()
+        # Do NOT start the hook immediately — on Windows startup the low-level
+        # hook infrastructure may not be ready yet.  A 5-second delay after the
+        # tray is visible avoids silent registration failures.
 
         self._schedule_sync()
 
@@ -57,8 +60,21 @@ class TextForgeApp:
         self._tray_icon = build_tray_icon(self)
         self._tray_icon.run_detached()
 
+        # Start the keyboard hook after a short delay so the OS hook
+        # infrastructure is fully initialised before we register.
+        threading.Thread(
+            target=self._delayed_hook_start, daemon=True, name="tf-hook-delay"
+        ).start()
+
         log.info("TextForge started. Running in system tray.")
         self._main_window.mainloop()  # blocks until quit() destroys the root
+
+    # --- Startup helpers ---
+
+    def _delayed_hook_start(self):
+        time.sleep(5)
+        if self.keyboard_hook:
+            self.keyboard_hook.start()
 
     # --- Sync helpers ---
 
@@ -155,7 +171,6 @@ class TextForgeApp:
         """Push snippets to Drive after a snippet add/edit/delete."""
         if not self.credentials:
             return
-        from .drive_sync import sync_to_drive
         threading.Thread(
             target=lambda: self._do_sync_after_save(), daemon=True
         ).start()

@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from collections import deque
 
 from .config import WORD_END_CHARS, BUFFER_MAX_LEN
@@ -16,32 +17,49 @@ class KeyboardHook:
 
     Lifecycle:
       hook = KeyboardHook()
-      hook.start()
+      hook.start()              # called after a startup delay (see app.py)
       ...
       hook.reload_shortcuts()   # call after snippet add/edit/delete
       hook.pause()              # unregisters hook — no events processed
       hook.resume()             # re-registers hook
-      hook.stop()               # permanent stop
+      hook.stop()               # permanent stop (called by app.quit)
+
+    Watchdog:
+      A daemon thread started in __init__ checks every 30 s whether the
+      hook is still active and restarts it silently if not.  This self-heals
+      the rare case where start() failed (e.g. OS not ready) or the hook
+      was silently unregistered.
     """
 
     def __init__(self):
         self._buffer: deque[str] = deque(maxlen=BUFFER_MAX_LEN)
         self._shortcuts: dict[str, str] = {}
         self._paused: bool = False
+        self._hook_active: bool = False
         self._lock = threading.Lock()
+        # Used only to wake the watchdog early on app shutdown (daemon=True
+        # handles the rest — no need to set this explicitly).
+        self._stop_event = threading.Event()
         self.reload_shortcuts()
+
+        threading.Thread(target=self._watchdog, daemon=True, name="tf-hook-watchdog").start()
 
     def start(self) -> None:
         """Register the global keyboard hook."""
+        if self._hook_active:
+            return
         try:
             import keyboard
             keyboard.on_press(self._on_key_event, suppress=False)
+            self._hook_active = True
             log.info("Keyboard hook started.")
         except Exception as e:
+            self._hook_active = False
             log.error("Failed to start keyboard hook: %s", e)
 
     def stop(self) -> None:
         """Unregister the global keyboard hook."""
+        self._hook_active = False
         try:
             import keyboard
             keyboard.unhook_all()
@@ -72,6 +90,20 @@ class KeyboardHook:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    def _is_hook_active(self) -> bool:
+        return self._hook_active
+
+    def _watchdog(self) -> None:
+        """
+        Every 30 s: if the hook should be active but isn't, restart it.
+        Handles the case where start() failed on first attempt (e.g. OS not
+        fully initialised) or the hook was silently dropped.
+        """
+        while not self._stop_event.wait(30):
+            if not self.is_paused and not self._is_hook_active():
+                log.warning("Keyboard hook not active — restarting.")
+                self.start()
 
     def _on_key_event(self, event) -> None:
         if self._paused:
