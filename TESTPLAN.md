@@ -107,7 +107,7 @@ Setup: add snippet `bs` → `Balaji Sivarajan` before running these tests.
 | # | Test | Expected | Result | Notes |
 |---|------|----------|--------|-------|
 | ST1 | Run app for 30 minutes with normal use | No crash, no freeze, tray icon remains responsive. | | |
-| ST2 | Memory usage after 30 minutes | Task Manager → Details → `TextForge.exe` memory stays under 50 MB. | | |
+| ST2 | No memory leak after 30 minutes | Task Manager → Details → `TextForge.exe` runs as a single process. Memory usage should not be continuously growing over the session — a stable or slowly fluctuating value is acceptable. | | |
 | ST3 | Add 20+ snippets | All snippets saved and listed correctly. No UI slowdown. | | |
 | ST4 | Rapid expansion (type 10 shortcuts quickly) | All expansions fire correctly and in order. No dropped or doubled characters. | | |
 

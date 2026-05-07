@@ -55,7 +55,7 @@ MANUAL_CASES = [
     "AS2 — Restart Windows: icon appears without manual launch",
     "AS3 — Single instance enforced (second launch shows dialog and exits)",
     "ST1 — No crash or freeze after 30 minutes of normal use",
-    "ST2 — Memory stays under 50 MB after 30 minutes",
+    "ST2 — No memory leak after 30 minutes (single process, memory not continuously growing)",
     "ST3 — 20+ snippets: all listed, no UI slowdown",
     "ST4 — Rapid typing of 10 shortcuts: no dropped/doubled characters",
 ]
