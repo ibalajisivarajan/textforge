@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "textforge"
-version = "1.1.0"
+version = "1.1.1"
 description = "A free, self-built, Google-synced system-wide text expander for Windows"
 readme = "README.md"
 license = { file = "LICENSE" }

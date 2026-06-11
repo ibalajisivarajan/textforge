@@ -1,4 +1,5 @@
 import logging
+import sys
 import threading
 import time
 from datetime import datetime
@@ -27,6 +28,10 @@ class TextForgeApp:
         self._tray_icon = None
         self._main_window = None
         self._sync_timer: Optional[threading.Timer] = None
+        self._hook_restart_lock = threading.Lock()
+        self._power_monitor_thread: Optional[threading.Thread] = None
+        self._power_monitor_hwnd = None
+        self._power_monitor_wndproc = None
 
     def start(self):
         """Full startup sequence. Blocks on tkinter mainloop."""
@@ -66,6 +71,8 @@ class TextForgeApp:
             target=self._delayed_hook_start, daemon=True, name="tf-hook-delay"
         ).start()
 
+        self._start_power_monitor()
+
         log.info("TextForge started. Running in system tray.")
         self._main_window.mainloop()  # blocks until quit() destroys the root
 
@@ -75,6 +82,175 @@ class TextForgeApp:
         time.sleep(5)
         if self.keyboard_hook:
             self.keyboard_hook.start()
+
+    def _start_power_monitor(self):
+        """Listen for Windows sleep/wake events and restart the hook on wake."""
+        if sys.platform != "win32":
+            log.debug("Windows power monitor skipped on non-Windows platform.")
+            return
+
+        if self._power_monitor_thread and self._power_monitor_thread.is_alive():
+            log.debug("Windows power monitor already running.")
+            return
+
+        def monitor():
+            import ctypes
+            import ctypes.wintypes
+
+            HWND_MESSAGE = -3
+            WM_POWERBROADCAST = 0x0218
+            PBT_APMRESUMEAUTOMATIC = 0x0012
+            PBT_APMRESUMESUSPEND = 0x0007
+
+            LRESULT = ctypes.c_ssize_t
+            WNDPROC = ctypes.WINFUNCTYPE(
+                LRESULT,
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            )
+
+            class WNDCLASSW(ctypes.Structure):
+                _fields_ = [
+                    ("style", ctypes.wintypes.UINT),
+                    ("lpfnWndProc", WNDPROC),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", ctypes.wintypes.HINSTANCE),
+                    ("hIcon", ctypes.wintypes.HICON),
+                    ("hCursor", ctypes.wintypes.HCURSOR),
+                    ("hbrBackground", ctypes.wintypes.HBRUSH),
+                    ("lpszMenuName", ctypes.wintypes.LPCWSTR),
+                    ("lpszClassName", ctypes.wintypes.LPCWSTR),
+                ]
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+            kernel32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
+            kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
+            user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
+            user32.RegisterClassW.restype = ctypes.wintypes.ATOM
+            user32.CreateWindowExW.argtypes = [
+                ctypes.wintypes.DWORD,
+                ctypes.wintypes.LPCWSTR,
+                ctypes.wintypes.LPCWSTR,
+                ctypes.wintypes.DWORD,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.HMENU,
+                ctypes.wintypes.HINSTANCE,
+                ctypes.wintypes.LPVOID,
+            ]
+            user32.CreateWindowExW.restype = ctypes.wintypes.HWND
+            user32.DefWindowProcW.argtypes = [
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.WPARAM,
+                ctypes.wintypes.LPARAM,
+            ]
+            user32.DefWindowProcW.restype = LRESULT
+            user32.GetMessageW.argtypes = [
+                ctypes.POINTER(ctypes.wintypes.MSG),
+                ctypes.wintypes.HWND,
+                ctypes.wintypes.UINT,
+                ctypes.wintypes.UINT,
+            ]
+            user32.GetMessageW.restype = ctypes.wintypes.BOOL
+            user32.TranslateMessage.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+            user32.TranslateMessage.restype = ctypes.wintypes.BOOL
+            user32.DispatchMessageW.argtypes = [ctypes.POINTER(ctypes.wintypes.MSG)]
+            user32.DispatchMessageW.restype = LRESULT
+
+            class_name = "TextForgePowerMonitorWindow"
+
+            def wnd_proc(hwnd, msg, wparam, lparam):
+                if msg == WM_POWERBROADCAST:
+                    log.debug("Received WM_POWERBROADCAST event: wparam=%s", wparam)
+                    if wparam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
+                        log.info("System resumed from sleep — scheduling hook restart.")
+                        timer = threading.Timer(3, self._restart_hook)
+                        timer.daemon = True
+                        timer.start()
+                return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+            try:
+                hinstance = kernel32.GetModuleHandleW(None)
+                wndproc = WNDPROC(wnd_proc)
+                self._power_monitor_wndproc = wndproc
+
+                wndclass = WNDCLASSW()
+                wndclass.lpfnWndProc = wndproc
+                wndclass.hInstance = hinstance
+                wndclass.lpszClassName = class_name
+
+                atom = user32.RegisterClassW(ctypes.byref(wndclass))
+                if not atom:
+                    error = ctypes.get_last_error()
+                    # ERROR_CLASS_ALREADY_EXISTS (1410) is harmless after app reloads.
+                    if error != 1410:
+                        raise ctypes.WinError(error)
+                    log.debug("Power monitor window class already registered.")
+
+                hwnd = user32.CreateWindowExW(
+                    0,
+                    class_name,
+                    "TextForge Power Monitor",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    ctypes.wintypes.HWND(HWND_MESSAGE),
+                    None,
+                    hinstance,
+                    None,
+                )
+                if not hwnd:
+                    raise ctypes.WinError(ctypes.get_last_error())
+
+                self._power_monitor_hwnd = hwnd
+                log.info("Windows power monitor started.")
+
+                msg = ctypes.wintypes.MSG()
+                while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+            except Exception as e:
+                log.warning("Windows power monitor failed: %s", e)
+
+        self._power_monitor_thread = threading.Thread(
+            target=monitor, daemon=True, name="tf-power-monitor"
+        )
+        self._power_monitor_thread.start()
+        log.debug("Windows power monitor thread launched.")
+
+    def _restart_hook(self):
+        """Safely restart the keyboard hook after Windows resumes from sleep."""
+        if not self.keyboard_hook:
+            log.debug("Hook restart requested, but keyboard hook is not initialised.")
+            return
+
+        if self.keyboard_hook.is_paused:
+            log.info("Hook restart skipped because expansion is paused.")
+            return
+
+        if not self._hook_restart_lock.acquire(blocking=False):
+            log.debug("Hook restart already in progress; skipping duplicate request.")
+            return
+
+        try:
+            log.info("Restarting keyboard hook after sleep/wake.")
+            self.keyboard_hook.stop()
+            time.sleep(1)
+            self.keyboard_hook.start()
+            log.info("Hook restarted after sleep/wake.")
+        finally:
+            self._hook_restart_lock.release()
 
     # --- Sync helpers ---
 

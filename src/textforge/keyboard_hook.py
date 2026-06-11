@@ -25,10 +25,12 @@ class KeyboardHook:
       hook.stop()               # permanent stop (called by app.quit)
 
     Watchdog:
-      A daemon thread started in __init__ checks every 30 s whether the
-      hook is still active and restarts it silently if not.  This self-heals
-      the rare case where start() failed (e.g. OS not ready) or the hook
-      was silently unregistered.
+      A daemon thread started in __init__ checks every 15 s whether the
+      hook is still active and whether it has seen a keypress recently.
+      This self-heals the rare case where start() failed (e.g. OS not
+      ready), the hook was silently unregistered, or Windows invalidated
+      the low-level hook across sleep/wake while our state still looked
+      active.
     """
 
     def __init__(self):
@@ -36,6 +38,7 @@ class KeyboardHook:
         self._shortcuts: dict[str, str] = {}
         self._paused: bool = False
         self._hook_active: bool = False
+        self._last_key_time: float = time.time()
         self._lock = threading.Lock()
         # Used only to wake the watchdog early on app shutdown (daemon=True
         # handles the rest — no need to set this explicitly).
@@ -47,10 +50,12 @@ class KeyboardHook:
     def start(self) -> None:
         """Register the global keyboard hook."""
         if self._hook_active:
+            log.debug("Keyboard hook start requested, but hook is already marked active.")
             return
         try:
             import keyboard
             keyboard.on_press(self._on_key_event, suppress=False)
+            self._last_key_time = time.time()
             self._hook_active = True
             log.info("Keyboard hook started.")
         except Exception as e:
@@ -92,20 +97,45 @@ class KeyboardHook:
         return self._paused
 
     def _is_hook_active(self) -> bool:
+        """Return whether the hook appears to be registered.
+
+        `_hook_active` is still useful for detecting failed starts and explicit
+        stops, but Windows can invalidate a low-level keyboard hook during
+        sleep/wake without notifying the `keyboard` package.  The watchdog
+        therefore combines this flag with a recent-keypress check instead of
+        trusting the flag by itself.
+        """
         return self._hook_active
 
     def _watchdog(self) -> None:
         """
-        Every 30 s: if the hook should be active but isn't, restart it.
-        Handles the case where start() failed on first attempt (e.g. OS not
-        fully initialised) or the hook was silently dropped.
+        Every 15 s: restart the hook if it is inactive or may be stale.
+
+        The stale check is intentionally conservative: a user may simply have
+        been idle for 45+ seconds, but restarting an active hook is cheap and
+        is safer than leaving TextForge broken after Windows sleep/wake.
         """
-        while not self._stop_event.wait(30):
-            if not self.is_paused and not self._is_hook_active():
+        while not self._stop_event.wait(15):
+            if self.is_paused:
+                continue
+
+            if not self._is_hook_active():
                 log.warning("Keyboard hook not active — restarting.")
+                self.start()
+                continue
+
+            idle_seconds = time.time() - self._last_key_time
+            if idle_seconds > 45:
+                log.warning(
+                    "Hook may be stale — restarting after %.1f seconds without keypress.",
+                    idle_seconds,
+                )
+                self.stop()
                 self.start()
 
     def _on_key_event(self, event) -> None:
+        self._last_key_time = time.time()
+
         if self._paused:
             return
 
